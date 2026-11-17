@@ -15,7 +15,8 @@ model User {
   name        String?
   password    String
   role        String   @default("USER") // USER, DEVELOPER, ADMIN
-  studioName  String?  // <-- Kolom baru buat Developer
+  studioName  String?  
+  status      String   @default("APPROVED") // <-- KOLOM BARU BUAT VERIFIKASI
   createdAt   DateTime @default(now())
 
   // Relasi-relasi (JANGAN DIHAPUS)
