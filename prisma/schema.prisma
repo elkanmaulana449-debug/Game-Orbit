@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // url = env("DATABASE_URL") 
+  // url = env("DATABASE_URL")
 }
 
 // Tabel User (Admin, Developer, Player/User)
@@ -15,9 +15,10 @@ model User {
   name        String?
   password    String
   role        String   @default("USER") // USER, DEVELOPER, ADMIN
-  studioName  String?  
+  studioName  String?
   status      String   @default("APPROVED") // <-- KOLOM BARU BUAT VERIFIKASI
   createdAt   DateTime @default(now())
+  lastSeenAt  DateTime? // <-- BARU: terakhir terlihat aktif (buat status online/offline di chat)
 
   // Relasi-relasi (JANGAN DIHAPUS)
   gamesDeveloper   Game[]          @relation("DeveloperGames")
@@ -55,6 +56,7 @@ model Transaction {
 }
 
 // Tabel Chat (Fitur Chat)
+// receiverId KOSONG (null) = pesan GLOBAL CHAT, terisi = pesan PERSONAL.
 model ChatMessage {
   id         String   @id @default(cuid())
   content    String
@@ -64,6 +66,9 @@ model ChatMessage {
   senderId   String
   sender     User     @relation("Sender", fields: [senderId], references: [id])
 
-  receiverId String
-  receiver   User     @relation("Receiver", fields: [receiverId], references: [id])
+  receiverId String?
+  receiver   User?    @relation("Receiver", fields: [receiverId], references: [id])
+
+  @@index([receiverId, createdAt])
+  @@index([senderId, receiverId])
 }
