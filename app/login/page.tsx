@@ -1,33 +1,43 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    try {
+      const response = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "login", email, password }),
+      });
+      const data = await response.json().catch(() => ({}));
 
-    const response = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "login", email, password }),
-    });
+      if (!response.ok) {
+        alert(data.pesan || "Login gagal. Periksa koneksi dan coba lagi.");
+        return;
+      }
 
-    const data = await response.json();
-    setLoading(false);
+      if (!data.user?.id || !data.user?.role) {
+        alert("Data akun dari server tidak lengkap. Coba login kembali.");
+        return;
+      }
 
-    if (response.ok) {
-      alert("Login Berhasil! Selamat datang.");
       localStorage.setItem("user", JSON.stringify(data.user));
-      router.push("/store");
-    } else {
-      alert(data.pesan);
+      const tujuan = data.user.role === "DEVELOPER"
+        ? "/dashboard"
+        : data.user.role === "ADMIN"
+          ? "/admin"
+          : "/store";
+      window.location.assign(tujuan);
+    } catch (error) {
+      console.error("ERROR_LOGIN", error);
+      alert("Tidak dapat terhubung ke server. Coba lagi.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -74,9 +84,9 @@ export default function Login() {
 
         <p className="mt-6 text-center text-sm text-slate-400">
           Belum punya akun?{" "}
-          <Link href="/register" className="font-medium text-cyan-400 hover:underline">
+          <a href="/register" className="font-medium text-cyan-400 hover:underline">
             Daftar
-          </Link>
+          </a>
         </p>
       </form>
     </div>

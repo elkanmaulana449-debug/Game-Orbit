@@ -1,239 +1,254 @@
-// app/dashboard/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { GAME_GENRES } from "@/app/lib/game-genres";
+
+type DeveloperUser = { id: string; name: string | null; studioName: string | null; role: string };
+type DeveloperGame = {
+  id: string;
+  title: string;
+  description: string;
+  genre: string;
+  price: number;
+  imageUrl: string | null;
+  videoUrl: string | null;
+  developerId: string;
+  downloadCount: number;
+};
+type TabDashboard = "ringkasan" | "games" | "analitik";
+
+const boxStyle = {
+  backgroundColor: "#fff",
+  padding: 20,
+  borderRadius: 10,
+  border: "1px solid #e5e7eb",
+  boxShadow: "0 1px 3px rgba(0,0,0,.08)",
+  color: "#111827",
+};
 
 export default function DashboardDeveloper() {
   const router = useRouter();
-  
-  const [user, setUser] = useState<any>(null);
-  const [games, setGames] = useState<any[]>([]);
+  const [user, setUser] = useState<DeveloperUser | null>(null);
+  const [games, setGames] = useState<DeveloperGame[]>([]);
   const [loading, setLoading] = useState(true);
-
+  const [tab, setTab] = useState<TabDashboard>("ringkasan");
+  const [showForm, setShowForm] = useState(false);
+  const [editingGame, setEditingGame] = useState<DeveloperGame | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [genre, setGenre] = useState<string>("Lainnya");
   const [price, setPrice] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const [removeVideo, setRemoveVideo] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const userData = localStorage.getItem("user");
-    if (!userData) {
-      alert("Kamu harus login dulu!");
-      router.push("/login");
+    let aktif = true;
+    let parsedUser: DeveloperUser | null = null;
+    try {
+      const raw = localStorage.getItem("user");
+      parsedUser = raw ? JSON.parse(raw) as DeveloperUser : null;
+    } catch {
+      localStorage.removeItem("user");
+    }
+    if (!parsedUser) {
+      router.replace("/login");
       return;
     }
-    
-    const parsedUser = JSON.parse(userData);
     if (parsedUser.role !== "DEVELOPER" && parsedUser.role !== "ADMIN") {
-      alert("Halaman ini khusus untuk Developer atau Admin!");
-      router.push("/store");
+      router.replace("/store");
       return;
     }
+    // localStorage hanya tersedia di browser; sinkronkan sesi setelah halaman mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUser(parsedUser);
 
-    const ambilGame = async () => {
-      try {
-        const res = await fetch("/api/games");
-        const data = await res.json();
-        if (res.ok) {
-          const gameMilikDia = data.games.filter((g: any) => g.developerId === parsedUser.id);
-          setGames(gameMilikDia);
-        }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    ambilGame();
+    fetch(`/api/games?developerId=${encodeURIComponent(parsedUser.id)}`, { cache: "no-store" })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.pesan || "Gagal memuat game.");
+        if (aktif) setGames(data.games ?? []);
+      })
+      .catch((error) => { console.error("ERROR_DASHBOARD_GAMES", error); if (aktif) alert(error.message || "Gagal memuat game."); })
+      .finally(() => { if (aktif) setLoading(false); });
+
+    return () => { aktif = false; };
   }, [router]);
 
-  const handleTambahGame = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const response = await fetch("/api/games", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, description, price, developerId: user.id }),
-    });
+  const resetForm = () => {
+    setTitle(""); setDescription(""); setGenre("Lainnya"); setPrice(""); setImageFile(null); setVideoFile(null);
+    setRemoveImage(false); setRemoveVideo(false); setEditingGame(null); setShowForm(false);
+  };
 
-    const data = await response.json();
-    if (response.ok) {
-      alert(data.pesan);
-      window.location.reload(); 
-    } else {
-      alert(data.pesan);
+  const startCreate = () => {
+    resetForm();
+    setTab("games");
+    setShowForm(true);
+  };
+
+  const startEdit = (game: DeveloperGame) => {
+    setEditingGame(game); setTitle(game.title); setDescription(game.description); setGenre(game.genre || "Lainnya"); setPrice(String(game.price));
+    setImageFile(null); setVideoFile(null); setRemoveImage(false); setRemoveVideo(false);
+    setTab("games"); setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const uploadMedia = async (file: File) => {
+    if (!user) throw new Error("Sesi developer tidak ditemukan.");
+    const form = new FormData();
+    form.set("file", file);
+    form.set("developerId", user.id);
+    const res = await fetch("/api/uploads", { method: "POST", body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.pesan || "Gagal mengunggah media.");
+    return data.url as string;
+  };
+
+  const saveGame = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!user || saving) return;
+    setSaving(true);
+    try {
+      let imageUrl = editingGame?.imageUrl ?? null;
+      let videoUrl = editingGame?.videoUrl ?? null;
+      if (imageFile) imageUrl = await uploadMedia(imageFile);
+      else if (removeImage) imageUrl = null;
+      if (videoFile) videoUrl = await uploadMedia(videoFile);
+      else if (removeVideo) videoUrl = null;
+
+      const res = await fetch(editingGame ? `/api/games/${editingGame.id}` : "/api/games", {
+        method: editingGame ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description, genre, price, developerId: user.id, imageUrl, videoUrl, removeImage, removeVideo }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.pesan || "Gagal menyimpan game.");
+      setGames((current) => editingGame
+        ? current.map((game) => game.id === editingGame.id ? data.game : game)
+        : [data.game, ...current]);
+      alert(data.pesan || "Game berhasil disimpan.");
+      resetForm();
+    } catch (error) {
+      console.error("ERROR_SIMPAN_GAME", error);
+      alert(error instanceof Error ? error.message : "Gagal menyimpan game.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (loading || !user) return <p style={{ padding: "20px" }}>Memuat dashboard...</p>;
-
-  // --- LOGIKA STATISTIK DINAMIS ---
-  // Karena belum ada tabel unduhan/rating, kita set 0 dulu
-  const totalUnduhan = 0; 
-  const ratingRataRata = "0.0";
-  
-  // Warna tema biar gak nyatu
-  const boxStyle = { 
-    backgroundColor: "#ffffff", // Putih bersih
-    padding: "20px", 
-    borderRadius: "8px", 
-    border: "1px solid #e5e7eb",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.1)", // Kasih bayangan tipis
-    color: "#111" 
+  const deleteGame = async (game: DeveloperGame) => {
+    if (!user || !confirm(`Hapus “${game.title}”? Transaksi dan kepemilikan game ini juga akan dihapus.`)) return;
+    try {
+      const res = await fetch(`/api/games/${game.id}?developerId=${encodeURIComponent(user.id)}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.pesan || "Game gagal dihapus.");
+      setGames((current) => current.filter((item) => item.id !== game.id));
+      alert(data.pesan || "Game berhasil dihapus.");
+    } catch (error) {
+      console.error("ERROR_HAPUS_GAME", error);
+      alert(error instanceof Error ? error.message : "Game gagal dihapus.");
+    }
   };
 
+  if (loading || !user) return <p style={{ padding: 20 }}>Memuat dashboard...</p>;
+
+  const tabs: [TabDashboard, string][] = [["ringkasan", "📊 Ringkasan"], ["games", "🎮 Game saya"], ["analitik", "📈 Analitik"]];
+  const rupiah = (value: number) => value === 0 ? "Gratis" : new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
+  const totalUnduhan = games.reduce((total, game) => total + game.downloadCount, 0);
+
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "Arial, sans-serif", backgroundColor: "#f3f4f6" }}>
-      
-      {/* SIDEBAR */}
-      <div style={{ width: "250px", backgroundColor: "#d97706", color: "white", padding: "20px", display: "flex", flexDirection: "column", gap: "20px" }}>
-        <div>
-          <p style={{ fontSize: "12px", fontWeight: "bold", letterSpacing: "1px" }}>DEVELOPER HUB</p>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div style={{ backgroundColor: "#f59e0b", padding: "10px", borderRadius: "5px", fontWeight: "bold" }}>📊 Ringkasan</div>
-          <div style={{ padding: "10px", cursor: "pointer", opacity: 0.8 }}>🎮 Game saya</div>
-          <div style={{ padding: "10px", cursor: "pointer", opacity: 0.8 }}>📈 Analitik</div>
-        </div>
-      </div>
+    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "Arial, sans-serif", background: "#f3f4f6", color: "#111827" }}>
+      <aside style={{ width: 250, flexShrink: 0, background: "#d97706", color: "white", padding: 20, display: "flex", flexDirection: "column", gap: 24 }}>
+        <strong style={{ fontSize: 13, letterSpacing: 1 }}>DEVELOPER HUB</strong>
+        <nav style={{ display: "grid", gap: 8 }}>
+          {tabs.map(([id, label]) => <button key={id} onClick={() => { setTab(id); setShowForm(false); }} style={{ padding: 12, border: 0, borderRadius: 6, textAlign: "left", background: tab === id ? "#f59e0b" : "transparent", color: "white", fontWeight: tab === id ? 700 : 400, cursor: "pointer" }}>{label}</button>)}
+        </nav>
+        <div style={{ marginTop: "auto", fontSize: 13, opacity: .9 }}>{user.studioName || user.name}</div>
+      </aside>
 
-      {/* KONTEN UTAMA */}
-      <div style={{ flex: 1, padding: "30px" }}>
-        
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+      <main style={{ flex: 1, minWidth: 0, padding: 30 }}>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 20, marginBottom: 22 }}>
           <div>
-            <p style={{ margin: 0, fontSize: "14px", color: "#555" }}>DEVELOPER HUB</p>
-            <h1 style={{ margin: 0, fontSize: "28px", color: "#111" }}>Selamat datang, {user.studioName || user.name}.</h1>
-            <p style={{ margin: "5px 0 0 0", color: "#666" }}>Kelola karya, pantau performa, dan bawa dunia buatanmu ke lebih banyak pemain.</p>
+            <p style={{ margin: "0 0 5px", color: "#6b7280", fontSize: 13 }}>DEVELOPER HUB / {tabs.find(([id]) => id === tab)?.[1].replace(/^\S+\s/, "").toUpperCase()}</p>
+            <h1 style={{ margin: 0, fontSize: 28 }}>Selamat datang, {user.studioName || user.name}.</h1>
+            <p style={{ margin: "7px 0 0", color: "#6b7280" }}>Kelola karya dan pantau performa game kamu.</p>
           </div>
-          <button 
-            onClick={() => setShowForm(!showForm)}
-            style={{ padding: "10px 20px", backgroundColor: "#eab308", color: "#333", border: "none", borderRadius: "5px", fontWeight: "bold", cursor: "pointer" }}
-          >
-            + Tambah game
-          </button>
-        </div>
+          <button onClick={startCreate} style={{ padding: "12px 18px", border: 0, borderRadius: 6, background: "#eab308", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>+ Tambah game</button>
+        </header>
 
-        {/* Notifikasi */}
-        <div style={{ backgroundColor: "#065f46", color: "white", padding: "15px", borderRadius: "5px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <strong>Akun developer disetujui!</strong>
-            <p style={{ margin: 0, fontSize: "14px", opacity: 0.9 }}>Studio kamu sudah terverifikasi. Kamu dapat mengunggah dan mengelola game.</p>
-          </div>
-          <span style={{ fontSize: "12px" }}>Disetujui 12 Sep 2026</span>
-        </div>
+        {tab === "ringkasan" && <>
+          <section style={{ background: "#065f46", color: "white", padding: 16, borderRadius: 7, marginBottom: 20 }}>
+            <strong>Akun developer disetujui</strong>
+            <p style={{ margin: "5px 0 0", fontSize: 14 }}>Studio kamu sudah terverifikasi. Kamu dapat mengunggah dan mengelola game.</p>
+          </section>
+          <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 16, marginBottom: 20 }}>
+            {[["Game saya", String(games.length).padStart(2, "0"), `${games.length} game terdaftar`], ["Pembelian / unduhan", String(totalUnduhan), "Total transaksi berhasil"], ["Rating rata-rata", "— / 5", "Belum ada ulasan"]].map(([label, value, note]) => <div key={label} style={boxStyle}><p style={{ margin: 0, color: "#6b7280", fontSize: 13 }}>{label}</p><strong style={{ display: "block", margin: "12px 0", fontSize: 30 }}>{value}</strong><span style={{ color: "#6b7280", fontSize: 12 }}>{note}</span></div>)}
+          </section>
+        </>}
 
-        {/* CARD STATISTIK (Sekarang Dinamis) */}
-        <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
-          <div style={{ ...boxStyle, flex: 1 }}>
-            <p style={{ margin: 0, fontSize: "14px", color: "#555" }}>Game saya</p>
-            <h2 style={{ margin: "10px 0", fontSize: "32px", color: "#111" }}>{games.length.toString().padStart(2, '0')}</h2>
-            <p style={{ margin: 0, fontSize: "12px", color: "#666" }}>{games.length} game terdaftar</p>
+        {tab === "analitik" && <section style={{ ...boxStyle, marginBottom: 20 }}>
+          <h2 style={{ marginTop: 0 }}>Analitik game</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14 }}>
+            <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}><span style={{ color: "#6b7280", fontSize: 13 }}>Pembelian / unduhan</span><h3 style={{ marginBottom: 4 }}>{totalUnduhan}</h3><small>Dari transaksi yang berhasil</small></div>
+            <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}><span style={{ color: "#6b7280", fontSize: 13 }}>Transaksi berhasil</span><h3 style={{ marginBottom: 4 }}>Belum tersedia</h3><small>Ringkasan transaksi belum dibuat</small></div>
+            <div style={{ padding: 16, background: "#f9fafb", borderRadius: 8 }}><span style={{ color: "#6b7280", fontSize: 13 }}>Rating</span><h3 style={{ marginBottom: 4 }}>Belum ada</h3><small>Belum ada ulasan pemain</small></div>
           </div>
-          <div style={{ ...boxStyle, flex: 1 }}>
-            <p style={{ margin: 0, fontSize: "14px", color: "#555" }}>Total unduhan</p>
-            <h2 style={{ margin: "10px 0", fontSize: "32px", color: "#111" }}>{totalUnduhan}</h2>
-            <p style={{ margin: 0, fontSize: "12px", color: "#666" }}>Belum ada data unduhan</p>
-          </div>
-          <div style={{ ...boxStyle, flex: 1 }}>
-            <p style={{ margin: 0, fontSize: "14px", color: "#555" }}>Rating rata-rata</p>
-            <h2 style={{ margin: "10px 0", fontSize: "32px", color: "#111" }}>{ratingRataRata} / 5</h2>
-            <p style={{ margin: 0, fontSize: "12px", color: "#666" }}>Belum ada ulasan</p>
-          </div>
-        </div>
+          <p style={{ marginBottom: 0, color: "#6b7280", fontSize: 13 }}>Grafik analitik akan terisi setelah data unduhan dan ulasan tersedia.</p>
+        </section>}
 
-        {/* Form Tambah Game */}
-        {showForm && (
-          <div style={{ ...boxStyle, marginBottom: "20px" }}>
-            <h3 style={{ marginTop: 0 }}>Tambah Game Baru</h3>
-            <form onSubmit={handleTambahGame} style={{ display: "flex", flexDirection: "column", gap: "10px", maxWidth: "400px" }}>
-              <input type="text" placeholder="Judul Game" required value={title} onChange={(e) => setTitle(e.target.value)} style={{ padding: "8px", border: "1px solid #ccc", borderRadius: "4px" }} />
-              <textarea placeholder="Deskripsi" value={description} onChange={(e) => setDescription(e.target.value)} style={{ padding: "8px", border: "1px solid #ccc", borderRadius: "4px" }} />
-              <input type="number" placeholder="Harga (cth: 50000)" required value={price} onChange={(e) => setPrice(e.target.value)} style={{ padding: "8px", border: "1px solid #ccc", borderRadius: "4px" }} />
-              <button type="submit" style={{ padding: "10px", backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Simpan Game</button>
-            </form>
+        {tab === "games" && showForm && <section style={{ ...boxStyle, marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h2 style={{ marginTop: 0 }}>{editingGame ? "Ubah game" : "Tambah game baru"}</h2>
+            <button type="button" onClick={resetForm} aria-label="Tutup form" style={{ border: 0, background: "transparent", fontSize: 24, cursor: "pointer" }}>×</button>
           </div>
-        )}
+          <form onSubmit={saveGame} style={{ display: "grid", gap: 14, maxWidth: 720 }}>
+            <label style={{ display: "grid", gap: 6, fontSize: 13 }}>Judul game<input required value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} /></label>
+            <label style={{ display: "grid", gap: 6, fontSize: 13 }}>Deskripsi<textarea required rows={4} value={description} onChange={(e) => setDescription(e.target.value)} style={inputStyle} /></label>
+            <label style={{ display: "grid", gap: 6, fontSize: 13 }}>Genre
+              <select required value={genre} onChange={(e) => setGenre(e.target.value)} style={inputStyle}>
+                {GAME_GENRES.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 6, fontSize: 13 }}>Harga dalam rupiah<input required type="number" min="0" step="1" value={price} onChange={(e) => setPrice(e.target.value)} style={inputStyle} /></label>
+            <label style={{ display: "grid", gap: 6, fontSize: 13 }}>Gambar sampul (JPG, PNG, WEBP, GIF; maksimal 10 MB)<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(e) => { setImageFile(e.target.files?.[0] ?? null); setRemoveImage(false); }} /></label>
+            {editingGame?.imageUrl && <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 12 }}><img src={editingGame.imageUrl} alt="Gambar game saat ini" style={{ width: 100, height: 60, borderRadius: 5, objectFit: "cover" }} /><a href={editingGame.imageUrl} target="_blank" rel="noreferrer">Lihat gambar saat ini</a><label><input type="checkbox" checked={removeImage} onChange={(e) => setRemoveImage(e.target.checked)} /> Hapus gambar</label></div>}
+            <label style={{ display: "grid", gap: 6, fontSize: 13 }}>Video game (MP4, WEBM; maksimal 100 MB)<input type="file" accept="video/mp4,video/webm" onChange={(e) => { setVideoFile(e.target.files?.[0] ?? null); setRemoveVideo(false); }} /></label>
+            {editingGame?.videoUrl && <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 12 }}><video src={editingGame.videoUrl} controls style={{ width: 150, maxHeight: 85, borderRadius: 5 }} /><label><input type="checkbox" checked={removeVideo} onChange={(e) => setRemoveVideo(e.target.checked)} /> Hapus video</label></div>}
+            <p style={{ margin: 0, color: "#6b7280", fontSize: 12 }}>File baru akan menggantikan file lama setelah disimpan.</p>
+            <div style={{ display: "flex", gap: 8 }}><button disabled={saving} type="submit" style={{ ...primaryButton, opacity: saving ? .7 : 1 }}>{saving ? "Mengunggah dan menyimpan..." : editingGame ? "Simpan perubahan" : "Simpan game"}</button><button type="button" onClick={resetForm} style={secondaryButton}>Batal</button></div>
+          </form>
+        </section>}
 
-        {/* Tabel List Game */}
-        <div style={{ ...boxStyle, marginBottom: "20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "15px" }}>
-            <h3 style={{ margin: 0 }}>Game saya</h3>
+        {(tab === "ringkasan" || tab === "games") && <section style={boxStyle}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <h2 style={{ margin: 0, fontSize: 18 }}>{tab === "ringkasan" ? "Game terbaru" : "Game saya"}</h2>
+            {tab === "games" && !showForm && <button onClick={startCreate} style={primaryButton}>+ Tambah game</button>}
           </div>
-          
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#fcd34d", color: "#333" }}>
-                <th style={{ padding: "10px" }}>GAME</th>
-                <th style={{ padding: "10px" }}>STATUS</th>
-                <th style={{ padding: "10px" }}>UNDUHAN</th>
-                <th style={{ padding: "10px" }}>RATING</th>
-                <th style={{ padding: "10px" }}>HARGA</th>
-              </tr>
-            </thead>
-            <tbody>
-              {games.length === 0 ? (
-                <tr><td colSpan={5} style={{ padding: "20px", textAlign: "center", color: "#888" }}>Belum ada game. Klik "Tambah game" untuk mulai.</td></tr>
-              ) : (
-                games.map((game) => (
-                  <tr key={game.id} style={{ borderBottom: "1px solid #eee" }}>
-                    <td style={{ padding: "10px" }}>
-                      <div style={{ fontWeight: "bold" }}>{game.title}</div>
-                      <div style={{ fontSize: "12px", color: "#666" }}>Versi 1.0</div>
-                    </td>
-                    <td style={{ padding: "10px" }}>
-                      <span style={{ backgroundColor: "#065f46", color: "white", padding: "4px 8px", borderRadius: "12px", fontSize: "12px" }}>● Diterbitkan</span>
-                    </td>
-                    <td style={{ padding: "10px" }}>0</td> {/* Dummy sementara */}
-                    <td style={{ padding: "10px" }}>★ 0.0</td> {/* Dummy sementara */}
-                    <td style={{ padding: "10px" }}>{game.price === 0 ? "Gratis" : `Rp ${game.price}`}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Grafik & Aktivitas */}
-        <div style={{ display: "flex", gap: "20px" }}>
-          <div style={{ ...boxStyle, flex: 2 }}>
-            <h3 style={{ margin: "0 0 10px 0" }}>Unduhan 7 hari terakhir</h3>
-            <p style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#666" }}>0 unduhan</p>
-            
-            {games.length === 0 ? (
-              <p style={{ color: "#888", fontSize: "14px", fontStyle: "italic" }}>Belum ada data unduhan karena game belum dipublikasikan.</p>
-            ) : (
-              <div style={{ display: "flex", alignItems: "flex-end", gap: "10px", height: "150px" }}>
-                {/* Grafik palsu pakai div */}
-                <div style={{ flex: 1, backgroundColor: "#f59e0b", height: "0%" }}></div>
-                <div style={{ flex: 1, backgroundColor: "#f59e0b", height: "0%" }}></div>
-                <div style={{ flex: 1, backgroundColor: "#f59e0b", height: "0%" }}></div>
-                <div style={{ flex: 1, backgroundColor: "#f59e0b", height: "0%" }}></div>
-                <div style={{ flex: 1, backgroundColor: "#f59e0b", height: "0%" }}></div>
-                <div style={{ flex: 1, backgroundColor: "#f59e0b", height: "0%" }}></div>
-                <div style={{ flex: 1, backgroundColor: "#eab308", height: "0%" }}></div>
-              </div>
-            )}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", minWidth: tab === "games" ? 760 : 600 }}>
+              <thead><tr style={{ background: "#fcd34d" }}>{["GAME", "STATUS", "UNDUHAN", "RATING", "HARGA", ...(tab === "games" ? ["AKSI"] : [])].map((head) => <th key={head} style={thStyle}>{head}</th>)}</tr></thead>
+              <tbody>
+                {games.length === 0 ? <tr><td colSpan={tab === "games" ? 6 : 5} style={{ padding: 24, textAlign: "center", color: "#6b7280" }}>Belum ada game. Tambahkan game pertamamu.</td></tr> : games.slice(0, tab === "ringkasan" ? 5 : undefined).map((game) => <tr key={game.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                  <td style={tdStyle}><div style={{ display: "flex", gap: 10, alignItems: "center" }}>{game.imageUrl ? <img src={game.imageUrl} alt="" style={{ width: 54, height: 38, borderRadius: 4, objectFit: "cover" }} /> : <div style={{ width: 54, height: 38, borderRadius: 4, background: "#ede9fe" }} />}<div><strong>{game.title}</strong><div style={{ fontSize: 11, color: "#6b7280" }}>{game.videoUrl ? "Gambar + video" : game.imageUrl ? "Dengan gambar" : "Versi 1.0"}</div></div></div></td>
+                  <td style={tdStyle}><span style={{ borderRadius: 20, background: "#065f46", color: "white", padding: "4px 8px", fontSize: 11 }}>● Diterbitkan</span></td>
+                  <td style={tdStyle}>{game.downloadCount}</td><td style={tdStyle}>—</td><td style={tdStyle}>{rupiah(game.price)}</td>
+                  {tab === "games" && <td style={tdStyle}><div style={{ display: "flex", gap: 6 }}><button onClick={() => startEdit(game)} style={secondaryButton}>Ubah</button><button onClick={() => deleteGame(game)} style={deleteButton}>Hapus</button></div></td>}
+                </tr>)}
+              </tbody>
+            </table>
           </div>
-
-          <div style={{ ...boxStyle, flex: 1 }}>
-            <h3 style={{ margin: "0 0 15px 0" }}>Aktivitas terbaru</h3>
-            {games.length === 0 ? (
-              <p style={{ color: "#888", fontSize: "14px", fontStyle: "italic" }}>Belum ada aktivitas. Mulai dengan menambahkan game pertamamu!</p>
-            ) : (
-              <ul style={{ listStyle: "none", padding: 0, margin: 0, fontSize: "14px", display: "flex", flexDirection: "column", gap: "15px" }}>
-                <li>
-                  <span style={{ color: "#065f46", fontWeight: "bold" }}>●</span> Game berhasil ditambahkan<br/>
-                  <span style={{ fontSize: "12px", color: "#666" }}>Baru saja</span>
-                </li>
-              </ul>
-            )}
-          </div>
-        </div>
-
-      </div>
+        </section>}
+      </main>
     </div>
   );
 }
+
+const inputStyle = { width: "100%", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: 6, font: "inherit" };
+const thStyle = { padding: 11, fontSize: 12, whiteSpace: "nowrap" as const };
+const tdStyle = { padding: 11, fontSize: 13, verticalAlign: "middle" as const };
+const primaryButton = { padding: "9px 13px", border: 0, borderRadius: 5, background: "#eab308", color: "#111827", fontWeight: 700, cursor: "pointer" };
+const secondaryButton = { padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: 5, background: "white", color: "#111827", cursor: "pointer" };
+const deleteButton = { padding: "7px 10px", border: "1px solid #fecaca", borderRadius: 5, background: "#fff1f2", color: "#b91c1c", cursor: "pointer" };

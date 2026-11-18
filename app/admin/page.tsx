@@ -14,6 +14,7 @@ export default function AdminDashboard() {
   
   const [games, setGames] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [deletingGameId, setDeletingGameId] = useState<string | null>(null);
 
   const ambilData = async () => {
     try {
@@ -60,6 +61,30 @@ export default function AdminDashboard() {
     const data = await res.json();
     alert(data.pesan);
     if (res.ok) ambilData();
+  };
+
+  const handleHapusGame = async (game: { id: string; title: string }) => {
+    if (!user?.id) return;
+    if (!confirm(`Hapus game “${game.title}”? Transaksi dan kepemilikan game ini juga akan dihapus.`)) return;
+
+    setDeletingGameId(game.id);
+    try {
+      const response = await fetch(`/api/games/${game.id}?adminId=${encodeURIComponent(user.id)}`, {
+        method: "DELETE",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(data.pesan || "Game gagal dihapus.");
+        return;
+      }
+      setGames((current) => current.filter((item) => item.id !== game.id));
+      alert(data.pesan || "Game berhasil dihapus.");
+    } catch (error) {
+      console.error("ERROR_ADMIN_HAPUS_GAME", error);
+      alert("Tidak dapat terhubung ke server. Coba lagi.");
+    } finally {
+      setDeletingGameId(null);
+    }
   };
 
   if (loading || !user) return <p style={{ padding: "20px" }}>Memuat dashboard Admin...</p>;
@@ -166,7 +191,7 @@ export default function AdminDashboard() {
                   <tr key={game.id} style={{ borderBottom: "1px solid #eee" }}>
                     <td style={{ padding: "10px", fontWeight: "bold" }}>{game.title}</td>
                     <td style={{ padding: "10px" }}>Rp {game.price}</td>
-                    <td style={{ padding: "10px" }}><button style={{ padding: "5px 10px", backgroundColor: "#ef4444", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Hapus</button></td>
+                    <td style={{ padding: "10px" }}><button onClick={() => handleHapusGame(game)} disabled={deletingGameId === game.id} style={{ padding: "5px 10px", backgroundColor: "#ef4444", color: "white", border: "none", borderRadius: "4px", cursor: deletingGameId === game.id ? "wait" : "pointer", opacity: deletingGameId === game.id ? 0.65 : 1 }}>{deletingGameId === game.id ? "Menghapus..." : "Hapus"}</button></td>
                   </tr>
                 ))}
               </tbody>

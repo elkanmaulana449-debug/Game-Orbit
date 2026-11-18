@@ -14,11 +14,13 @@ import {
 } from "./icons";
 import { SortMenu, UserGreeting } from "./client-parts";
 import { AppShell } from "./shell";
+import { GAME_GENRES, isGameGenre } from "@/app/lib/game-genres";
 
 type SearchParamsInput = {
   q?: string;
   harga?: string;
   urut?: string;
+  genre?: string;
   jelajahi?: string; // "1" = tampilkan semua game (menu Jelajahi)
 };
 
@@ -30,6 +32,7 @@ type GameItem = {
   id: string;
   title: string;
   description: string;
+  genre: string;
   price: number;
   imageUrl: string | null;
   developer: { name: string | null; studioName: string | null };
@@ -118,27 +121,29 @@ async function StoreContent({
   const urut: Urut =
     URUTAN.find((u) => u.value === params.urut)?.value ?? "relevan";
   const jelajahi = params.jelajahi === "1";
+  const genre = isGameGenre(params.genre) ? params.genre : undefined;
 
   const games: GameRow[] = await prisma.game.findMany({
-    where: keyword
-      ? {
-          OR: [
+    where: {
+      ...(genre ? { genre } : {}),
+      ...(keyword ? { OR: [
             { title: { contains: keyword, mode: insensitive } },
+            { genre: { contains: keyword, mode: insensitive } },
             { developer: { name: { contains: keyword, mode: insensitive } } },
             {
               developer: {
                 studioName: { contains: keyword, mode: insensitive },
               },
             },
-          ],
-        }
-      : undefined,
+          ] } : {}),
+    },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
       title: true,
       description: true,
       price: true,
+      genre: true,
       imageUrl: true,
       createdAt: true,
       developer: { select: { name: true, studioName: true } },
@@ -150,7 +155,7 @@ async function StoreContent({
   });
 
   // ---------- Mode pencarian / jelajahi semua game ----------
-  if (keyword || jelajahi) {
+  if (keyword || jelajahi || genre) {
     return (
       <SearchResults
         games={games}
@@ -158,6 +163,7 @@ async function StoreContent({
         jelajahi={jelajahi}
         harga={harga}
         urut={urut}
+        genre={genre}
       />
     );
   }
@@ -216,28 +222,7 @@ async function StoreContent({
         </div>
       </section>
 
-      {/* ===== Kategori (belum ada kolom genre di database -> tampilan saja) ===== */}
-      <div className="flex gap-[10px] overflow-x-auto">
-        {[
-          "Untukmu",
-          "Aksi",
-          "RPG",
-          "Petualangan",
-          "Simulasi",
-          "Balapan",
-          "Strategi",
-          "Santai",
-        ].map((kategori, i) => (
-          <span
-            key={kategori}
-            className={`shrink-0 rounded-[8px] border border-[#e4e6f0] px-[18px] py-[10px] text-[11px] ${
-              i === 0 ? "bg-[#6d4aff] font-semibold text-white" : "bg-white"
-            }`}
-          >
-            {kategori}
-          </span>
-        ))}
-      </div>
+      <GenreChips />
 
       {/* ===== Sedang populer ===== */}
       <section className="flex flex-col gap-4">
@@ -290,12 +275,14 @@ function buildHref(state: {
   jelajahi?: boolean;
   harga?: Harga;
   urut?: Urut;
+  genre?: string;
 }) {
   const sp = new URLSearchParams();
   if (state.q) sp.set("q", state.q);
-  else if (state.jelajahi) sp.set("jelajahi", "1");
+  else if (state.jelajahi || state.genre) sp.set("jelajahi", "1");
   if (state.harga) sp.set("harga", state.harga);
   if (state.urut && state.urut !== "relevan") sp.set("urut", state.urut);
+  if (state.genre) sp.set("genre", state.genre);
   const s = sp.toString();
   return s ? `/store?${s}` : "/store";
 }
@@ -334,15 +321,17 @@ function SearchResults({
   jelajahi,
   harga,
   urut,
+  genre,
 }: {
   games: GameRow[];
   keyword: string;
   jelajahi: boolean;
   harga?: Harga;
   urut: Urut;
+  genre?: string;
 }) {
-  const link = (patch: { harga?: Harga; urut?: Urut }) =>
-    buildHref({ q: keyword, jelajahi, harga, urut, ...patch });
+  const link = (patch: { harga?: Harga; urut?: Urut; genre?: string }) =>
+    buildHref({ q: keyword, jelajahi, harga, urut, genre, ...patch });
 
   const jumlahGratis = games.filter((g) => g.price === 0).length;
   const jumlahBerbayar = games.length - jumlahGratis;
@@ -370,7 +359,7 @@ function SearchResults({
       <div className="flex flex-col gap-2">
         <p className="text-[10px] font-bold text-[#6d4aff]">TEMUKAN GAME</p>
         <h1 className="text-[24px] font-bold leading-tight sm:text-[30px]">
-          {keyword ? <>Hasil pencarian “{keyword}”</> : "Jelajahi semua game"}
+          {keyword ? <>Hasil pencarian “{keyword}”</> : genre ? `Game genre ${genre}` : "Jelajahi semua game"}
         </h1>
         <p className="text-[13px] text-[#70758a]">
           {hasil.length > 0
@@ -378,6 +367,8 @@ function SearchResults({
             : "Belum ada game yang cocok dengan pencarianmu."}
         </p>
       </div>
+
+      <GenreChips selected={genre} query={keyword} />
 
       <div className="flex flex-col gap-7 lg:flex-row lg:items-start">
         {/* ===== Filter ===== */}
@@ -392,8 +383,18 @@ function SearchResults({
             </Link>
           </div>
 
-          {/* Filter genre / rating / platform belum ada datanya di database,
-              jadi yang tersedia baru filter harga. */}
+          <div className="flex flex-col gap-3">
+            <p className="text-[11px] font-semibold">Genre</p>
+            <FilterGenre href={link({ genre: undefined })} label="Semua genre" checked={!genre} />
+            {GAME_GENRES.map((item) => (
+              <FilterGenre
+                key={item}
+                href={link({ genre: genre === item ? undefined : item })}
+                label={item}
+                checked={genre === item}
+              />
+            ))}
+          </div>
           <div className="flex flex-col gap-4">
             <p className="text-[11px] font-semibold">Harga</p>
             <FilterOption
@@ -424,6 +425,7 @@ function SearchResults({
                   removeHref={link({ harga: undefined })}
                 />
               )}
+              {genre && <Chip label={genre} removeHref={link({ genre: undefined })} />}
               <span className="text-[11px]">{hasil.length} hasil</span>
             </div>
 
@@ -516,6 +518,36 @@ function FilterOption({
       <span className="flex-1 text-[12px]">{label}</span>
       <span className="text-[10px]">{count}</span>
     </Link>
+  );
+}
+
+function FilterGenre({ href, label, checked }: { href: string; label: string; checked: boolean }) {
+  return (
+    <Link href={href} className="flex items-center gap-[10px]">
+      <span className="flex size-[15px] shrink-0 items-center justify-center rounded-[4px] border border-[#e4e6f0] bg-white text-[#6d4aff]">
+        {checked && <CheckIcon size={11} />}
+      </span>
+      <span className="text-[12px]">{label}</span>
+    </Link>
+  );
+}
+
+function GenreChips({ selected, query = "" }: { selected?: string; query?: string }) {
+  const chips = ["Untukmu", "Aksi", "RPG", "Petualangan", "Simulasi", "Balapan", "Strategi", "Santai"];
+  return (
+    <div className="flex gap-[10px] overflow-x-auto pb-1" aria-label="Filter genre">
+      {chips.map((label) => {
+        const aktif = label === "Untukmu" ? !selected : selected === label;
+        const href = label === "Untukmu"
+          ? query ? buildHref({ q: query, jelajahi: true }) : "/store"
+          : buildHref({ q: query, jelajahi: true, genre: label });
+        return (
+          <Link key={label} href={href} aria-pressed={aktif} className={`shrink-0 rounded-[8px] border px-[18px] py-[10px] text-[11px] transition ${aktif ? "border-[#6d4aff] bg-[#6d4aff] font-semibold text-white" : "border-[#e4e6f0] bg-white hover:border-[#6d4aff] hover:text-[#6d4aff]"}`}>
+            {label}
+          </Link>
+        );
+      })}
+    </div>
   );
 }
 

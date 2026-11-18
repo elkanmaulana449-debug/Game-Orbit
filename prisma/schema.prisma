@@ -33,7 +33,9 @@ model Game {
   title       String
   description String
   price       Int
+  genre       String   @default("Lainnya")
   imageUrl    String?
+  videoUrl    String?
   createdAt   DateTime @default(now())
 
   developerId String

@@ -7,10 +7,24 @@ const connectionString = process.env.DATABASE_URL;
 const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
+const globalForPrisma = global as unknown as {
+  prisma?: PrismaClient;
+  prismaSchemaRevision?: string;
+};
 
-export const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({ adapter });
+// Naikkan revisi ini setelah Prisma Client digenerate dari perubahan schema.
+// Ini mencegah Next dev memakai singleton Prisma lama setelah hot reload.
+const prismaSchemaRevision = "game-genre-v1";
+const prismaClient =
+  process.env.NODE_ENV !== "production" &&
+  globalForPrisma.prisma &&
+  globalForPrisma.prismaSchemaRevision === prismaSchemaRevision
+    ? globalForPrisma.prisma
+    : new PrismaClient({ adapter });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+export const prisma = prismaClient;
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+  globalForPrisma.prismaSchemaRevision = prismaSchemaRevision;
+}
