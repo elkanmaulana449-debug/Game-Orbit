@@ -125,6 +125,7 @@ async function StoreContent({
 
   const games: GameRow[] = await prisma.game.findMany({
     where: {
+      status: { not: "INACTIVE" }, // game nonaktif tidak tampil di katalog
       ...(genre ? { genre } : {}),
       ...(keyword ? { OR: [
             { title: { contains: keyword, mode: insensitive } },

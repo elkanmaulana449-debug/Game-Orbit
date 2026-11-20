@@ -4,8 +4,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { Inter } from "next/font/google";
-import { BellIcon, CircleHelpIcon, LogoMark, RadioIcon } from "./icons";
+import { CircleHelpIcon, LogoMark, RadioIcon } from "./icons";
+import { LoncengNotifikasi, PilihBahasa } from "@/app/components/bilah-atas";
 import { SearchBox, SidebarNav, UserAvatar, UserMenu } from "./client-parts";
+import { WajibLogin } from "./wajib-login";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -14,6 +16,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div
       className={`${inter.className} flex min-h-screen bg-[#f7f8fc] text-[#22243a]`}
     >
+      <WajibLogin />
       <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -21,12 +24,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="flex h-[88px] shrink-0 items-center justify-between gap-4 border-b border-[#e4e6f0] bg-white px-4 sm:px-9">
           <SearchBox />
           <div className="flex shrink-0 items-center gap-[22px]">
-            <span className="hidden text-[11px] text-[#70758a] sm:block">
-              ID ⌄
-            </span>
-            <button type="button" aria-label="Notifikasi">
-              <BellIcon size={20} />
-            </button>
+            <PilihBahasa />
+            <LoncengNotifikasi />
             <div className="hidden h-[25px] w-px bg-[#e9eaf2] sm:block" />
             <UserAvatar />
           </div>
@@ -66,7 +65,7 @@ function Sidebar() {
       </div>
 
       <div className="mt-auto flex flex-col gap-[17px]">
-        <Link href="#" className="flex items-center gap-3 text-[12px]">
+        <Link href="/bantuan" className="flex items-center gap-3 text-[12px]">
           <CircleHelpIcon size={18} />
           Pusat bantuan
         </Link>

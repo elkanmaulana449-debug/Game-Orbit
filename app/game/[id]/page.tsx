@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/app/store/shell";
 import { CheckIcon, DownloadIcon } from "@/app/store/icons";
+import { Bintang, PanelUlasan, useUlasan } from "./ulasan";
 
 type GameDetails = {
   id: string;
@@ -12,6 +13,7 @@ type GameDetails = {
   genre: string;
   price: number;
   imageUrl: string | null;
+  videoUrl: string | null;
   developerId: string;
   developer: { name: string | null; studioName: string | null };
 };
@@ -37,7 +39,9 @@ function DetailGameContent() {
   const [transaksiBerlangsung, setTransaksiBerlangsung] = useState(false);
   const [tersimpan, setTersimpan] = useState(false);
   const [tab, setTab] = useState<Tab>("tentang");
+  const [putarVideo, setPutarVideo] = useState(false);
   const [pesan, setPesan] = useState("");
+  const { data: dataUlasan, muat: muatUlasan, gagal: gagalUlasan } = useUlasan(idGame, user?.id ?? null);
 
   useEffect(() => {
     let aktif = true;
@@ -112,6 +116,7 @@ function DetailGameContent() {
       const data = await response.json().catch(() => ({}));
       if (response.ok || data.pesan === "Kamu sudah memiliki game ini!") {
         setSudahDimiliki(true);
+        void muatUlasan();
         alert(game.price === 0 ? "Game berhasil ditambahkan ke koleksi!" : "Pembelian berhasil! Game masuk ke koleksi kamu.");
       } else {
         alert(data.pesan || "Transaksi gagal. Coba lagi.");
@@ -175,9 +180,9 @@ function DetailGameContent() {
             <h1 className="text-3xl font-extrabold tracking-[-1px] sm:text-[42px]">{game.title}</h1>
             <p className="mt-2 text-[12px] text-white/80">{developer}<span className="px-2">·</span>{game.genre}</p>
             <div className="mt-4 flex flex-wrap gap-x-7 gap-y-2 text-[11px] text-white/90">
-              <span><b className="mr-1 text-sm">—</b> Belum ada rating</span>
-              <span><b className="mr-1 text-sm">—</b> Unduhan</span>
-              <span><b className="mr-1 text-sm">—</b> Ulasan</span>
+              <span className="inline-flex items-center gap-1.5"><Bintang nilai={dataUlasan.ringkasan.rata} ukuran={13} /><b className="text-sm">{dataUlasan.ringkasan.jumlah === 0 ? "—" : dataUlasan.ringkasan.rata.toFixed(1)}</b></span>
+              <span><b className="mr-1 text-sm">{dataUlasan.ringkasan.unduhan}</b> Unduhan</span>
+              <span><b className="mr-1 text-sm">{dataUlasan.ringkasan.jumlah}</b> Ulasan</span>
               <span className="font-semibold">{game.price === 0 ? "Gratis" : formatHarga(game.price)}</span>
             </div>
             <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -208,7 +213,25 @@ function DetailGameContent() {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={game.imageUrl} alt={`${game.title} artwork ${item + 1}`} className="absolute inset-0 h-full w-full object-cover opacity-75" />
                   ) : <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,#a78bfa66,transparent_35%),linear-gradient(135deg,transparent_35%,#09081799)]" />}
-                  {item === 0 && <span className="z-10 flex size-11 items-center justify-center rounded-full bg-white/95 text-lg text-[#704cff] shadow-lg">▶</span>}
+                  {item === 0 && game.videoUrl && !putarVideo && (
+                    <button
+                      type="button"
+                      onClick={() => setPutarVideo(true)}
+                      aria-label="Putar video game"
+                      className="z-10 flex size-11 items-center justify-center rounded-full bg-white/95 text-lg text-[#704cff] shadow-lg transition hover:scale-105"
+                    >
+                      ▶
+                    </button>
+                  )}
+                  {item === 0 && game.videoUrl && putarVideo && (
+                    <video
+                      src={game.videoUrl}
+                      controls
+                      autoPlay
+                      playsInline
+                      className="absolute inset-0 z-20 h-full w-full bg-black object-contain"
+                    />
+                  )}
                   {!game.imageUrl && <span className="z-10 px-4 text-center text-xs font-semibold text-white/80">{game.title}</span>}
                 </div>
               ))}
@@ -228,21 +251,35 @@ function DetailGameContent() {
               </article>
               <aside className="rounded-xl border border-[#e3e5ef] bg-white p-4">
                 <div className="flex items-center justify-between border-b border-[#ececf2] pb-3">
-                  <div><strong className="text-2xl">—</strong><p className="text-[9px] text-[#85889a]">Belum ada rating</p></div>
+                  <div>
+                    <strong className="text-2xl">{dataUlasan.ringkasan.jumlah === 0 ? "—" : dataUlasan.ringkasan.rata.toFixed(1)}</strong>
+                    <p className="text-[9px] text-[#85889a]">{dataUlasan.ringkasan.jumlah === 0 ? "Belum ada rating" : `${dataUlasan.ringkasan.jumlah} ulasan`}</p>
+                  </div>
                   <button onClick={() => setTab("ulasan")} className="text-[9px] text-[#6d4aff] hover:underline">Lihat ulasan ↗</button>
                 </div>
-                <p className="py-4 text-[11px] leading-5 text-[#73768b]">Belum ada ulasan untuk game ini. Jadilah pemain pertama yang memberikan ulasan.</p>
-                <button onClick={() => setTab("ulasan")} className="rounded-md bg-[#f0ecff] px-3 py-2 text-[10px] font-semibold text-[#6743dc]">Tulis ulasan</button>
+                {dataUlasan.ulasan[0] ? (
+                  <p className="line-clamp-4 py-4 text-[11px] leading-5 text-[#73768b]">&ldquo;{dataUlasan.ulasan[0].content}&rdquo; <span className="text-[#9a9db0]">— {dataUlasan.ulasan[0].user.name}</span></p>
+                ) : (
+                  <p className="py-4 text-[11px] leading-5 text-[#73768b]">Belum ada ulasan untuk game ini. Jadilah pemain pertama yang memberikan ulasan.</p>
+                )}
+                <button onClick={() => setTab("ulasan")} className="rounded-md bg-[#f0ecff] px-3 py-2 text-[10px] font-semibold text-[#6743dc]">{dataUlasan.milikSaya ? "Lihat ulasan kamu" : "Tulis ulasan"}</button>
               </aside>
             </section>
           </>
         )}
 
         {tab === "ulasan" && (
-          <section className="mt-5 rounded-xl border border-[#e3e5ef] bg-white p-6">
-            <h2 className="text-lg font-semibold">Rating & ulasan</h2>
-            <p className="mt-2 text-sm text-[#73768b]">Belum ada ulasan untuk {game.title}.</p>
-          </section>
+          <PanelUlasan
+            gameId={game.id}
+            judul={game.title}
+            userId={user?.id ?? null}
+            peran={user?.role ?? null}
+            data={{ ...dataUlasan, punyaGame: dataUlasan.punyaGame || sudahDimiliki }}
+            gagalMuat={gagalUlasan}
+            onUbah={() => void muatUlasan()}
+            onLogin={() => router.push("/login")}
+            onMiliki={() => void handleAksiUtama()}
+          />
         )}
         {tab === "sistem" && (
           <section className="mt-5 rounded-xl border border-[#e3e5ef] bg-white p-6">

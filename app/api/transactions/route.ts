@@ -11,6 +11,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ pesan: "Data tidak lengkap!" }, { status: 400 });
     }
 
+    // Game nonaktif tidak bisa dibeli / diunduh
+    const game = await prisma.game.findUnique({ where: { id: gameId }, select: { status: true } });
+    if (!game) {
+      return NextResponse.json({ pesan: "Game tidak ditemukan!" }, { status: 404 });
+    }
+    if (game.status === "INACTIVE") {
+      return NextResponse.json({ pesan: "Game ini sedang tidak tersedia." }, { status: 400 });
+    }
+
     // Cek apakah user udah pernah beli game ini sebelumnya
     const cekTransaksi = await prisma.transaction.findFirst({
       where: {

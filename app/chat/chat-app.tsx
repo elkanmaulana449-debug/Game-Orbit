@@ -398,7 +398,7 @@ function PanelGlobal({
   onKirim: (teks: string) => Promise<boolean>;
   onChat: (user: UserLite) => void;
 }) {
-  const [profilId, setProfilId] = useState<string | null>(null);
+  const [profilId, setProfilId] = useState<string | null>(null); // id PESAN yang kartu profilnya terbuka
   const { ref, onScroll } = useGulirKeBawah(pesan?.length ?? 0);
   const kelompok = kelompokkanHari(pesan ?? []);
 
@@ -462,7 +462,7 @@ function PanelGlobal({
                     {!mine && (
                       <button
                         type="button"
-                        onClick={() => setProfilId(m.sender.id)}
+                        onClick={() => setProfilId(m.id)}
                         aria-label={`Lihat profil ${m.sender.name}`}
                       >
                         <Avatar nama={m.sender.name} size={27} />
@@ -474,7 +474,7 @@ function PanelGlobal({
                         mine ? undefined : (
                           <button
                             type="button"
-                            onClick={() => setProfilId(m.sender.id)}
+                            onClick={() => setProfilId(m.id)}
                             className="hover:underline"
                           >
                             {m.sender.name}
@@ -484,7 +484,7 @@ function PanelGlobal({
                       teks={m.content}
                       waktu={jam(m.createdAt)}
                     />
-                    {profilId === m.sender.id && !mine && (
+                    {profilId === m.id && !mine && (
                       <KartuProfil
                         userId={m.sender.id}
                         meId={meId}

@@ -17,6 +17,8 @@ type GameKoleksi = {
   diperolehPada: string;
 };
 
+type SimpanGame = { id: string; title: string; price: number; imageUrl: string | null; developer: { name: string | null; studioName: string | null } };
+
 type Urutan = "terbaru" | "terlama" | "nama";
 
 const URUTAN: { nilai: Urutan; label: string }[] = [
@@ -55,6 +57,39 @@ export function KoleksiContent() {
   const [gagal, setGagal] = useState(false);
   const [q, setQ] = useState("");
   const [urut, setUrut] = useState<Urutan>("terbaru");
+  const [tab, setTab] = useState<"dimiliki" | "tersimpan">("dimiliki");
+  const [tersimpan, setTersimpan] = useState<SimpanGame[] | null>(null);
+
+  // Tab "Tersimpan": id dari localStorage (tombol Simpan di halaman game), dicocokkan ke daftar game.
+  useEffect(() => {
+    if (tab !== "tersimpan") return;
+    let batal = false;
+    let ids: string[] = [];
+    try {
+      ids = JSON.parse(localStorage.getItem("game-orbit-simpan") || "[]");
+    } catch {
+      ids = [];
+    }
+    fetch("/api/games", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d: { games: (SimpanGame & { status?: string })[] }) => {
+        if (!batal) setTersimpan(d.games.filter((g) => ids.includes(g.id) && g.status !== "INACTIVE"));
+      })
+      .catch(() => !batal && setTersimpan([]));
+    return () => {
+      batal = true;
+    };
+  }, [tab]);
+
+  const lepasSimpan = (id: string) => {
+    try {
+      const ids: string[] = JSON.parse(localStorage.getItem("game-orbit-simpan") || "[]");
+      localStorage.setItem("game-orbit-simpan", JSON.stringify(ids.filter((x) => x !== id)));
+    } catch {
+      /* abaikan */
+    }
+    setTersimpan((daftar) => daftar?.filter((g) => g.id !== id) ?? null);
+  };
 
   useEffect(() => {
     if (user === null) router.replace("/login");
@@ -100,7 +135,43 @@ export function KoleksiContent() {
         </p>
       </div>
 
-      {games && games.length > 0 && (
+      <div className="flex gap-6 border-b border-[#e4e6f0] text-[13px]">
+        {([["dimiliki", "Dimiliki"], ["tersimpan", "Tersimpan"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} className={`border-b-2 pb-3 ${tab === id ? "border-[#6d4aff] font-semibold" : "border-transparent text-[#70758a] hover:text-[#22243a]"}`}>{label}</button>
+        ))}
+      </div>
+
+      {tab === "tersimpan" && (
+        !tersimpan ? (
+          <p className="text-[12px] text-[#70758a]">Memuat...</p>
+        ) : tersimpan.length === 0 ? (
+          <p className="rounded-[14px] border border-dashed border-[#d8dbe8] bg-white p-10 text-center text-[12px] text-[#70758a]">
+            Belum ada game tersimpan. Klik “Simpan” di halaman game untuk menaruhnya di sini.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {tersimpan.map((g) => (
+              <div key={g.id} className="flex flex-col gap-3 rounded-[14px] border border-[#e4e6f0] bg-white p-4">
+                <Link href={`/game/${g.id}`} className="flex flex-col gap-3">
+                  <div className="aspect-[16/10] w-full overflow-hidden rounded-[10px] bg-gradient-to-br from-[#6d4aff] to-[#b9a6ff]">
+                    {g.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={g.imageUrl} alt="" className="size-full object-cover" />
+                    ) : (
+                      <div className="flex size-full items-center justify-center text-[34px] font-bold text-white">{g.title[0]?.toUpperCase()}</div>
+                    )}
+                  </div>
+                  <h3 className="truncate text-[14px] font-semibold">{g.title}</h3>
+                  <p className="truncate text-[11px] text-[#70758a]">{g.developer.studioName || g.developer.name} · {g.price === 0 ? "Gratis" : `Rp ${g.price.toLocaleString("id-ID")}`}</p>
+                </Link>
+                <button onClick={() => lepasSimpan(g.id)} className="self-start text-[11px] text-[#c3475a] hover:underline">Hapus dari tersimpan</button>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {tab === "dimiliki" && games && games.length > 0 && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <label className="flex h-[42px] min-w-0 flex-1 items-center gap-3 rounded-[8px] border border-[#e4e6f0] bg-white px-[15px] sm:max-w-[420px]">
             <SearchIcon size={18} className="shrink-0" />
@@ -126,15 +197,15 @@ export function KoleksiContent() {
         </div>
       )}
 
-      {gagal && (
+      {tab === "dimiliki" && gagal && (
         <p className="text-[11px] text-[#b42318]">
           Koleksi tidak bisa dimuat. Muat ulang halaman atau coba lagi nanti.
         </p>
       )}
 
-      {!games && !gagal && <p className="text-[12px] text-[#70758a]">Memuat koleksi...</p>}
+      {tab === "dimiliki" && !games && !gagal && <p className="text-[12px] text-[#70758a]">Memuat koleksi...</p>}
 
-      {games && games.length === 0 && (
+      {tab === "dimiliki" && games && games.length === 0 && (
         <div className="flex flex-col items-center gap-4 rounded-[14px] border border-[#e4e6f0] bg-white px-6 py-16 text-center">
           <span className="flex size-14 items-center justify-center rounded-[14px] bg-[#f0ecff] text-[#6d4aff]">
             <LibraryBigIcon size={26} />
@@ -154,13 +225,13 @@ export function KoleksiContent() {
         </div>
       )}
 
-      {games && games.length > 0 && tampil.length === 0 && (
+      {tab === "dimiliki" && games && games.length > 0 && tampil.length === 0 && (
         <p className="text-[12px] text-[#70758a]">
           Tidak ada game yang cocok dengan “{q}”.
         </p>
       )}
 
-      {tampil.length > 0 && (
+      {tab === "dimiliki" && tampil.length > 0 && (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {tampil.map((g) => (
             <Link

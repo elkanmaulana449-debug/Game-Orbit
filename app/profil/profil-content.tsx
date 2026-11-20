@@ -29,6 +29,7 @@ type Profil = {
     createdAt: string;
   };
   jumlahKoleksi: number;
+  jumlahUlasan: number;
   terbaru: { id: string; title: string; imageUrl: string | null; diperolehPada: string }[];
 };
 
@@ -62,21 +63,74 @@ function Isian({ label, nilai }: { label: string; nilai: string }) {
 }
 
 function BarisPengaturan({
-  icon,
-  label,
-  nilai,
+  icon, label, nilai, onClick, nonaktif,
 }: {
   icon: ReactNode;
   label: string;
   nilai: string;
+  onClick?: () => void;
+  nonaktif?: boolean;
 }) {
-  // Pengaturan ini belum punya halaman/penyimpanan -> tampil saja (belum bisa diklik)
-  return (
-    <div className="flex items-center gap-[10px]">
+  const isi = (
+    <>
       {icon}
-      <span className="flex-1 text-[12px]">{label}</span>
+      <span className="flex-1 text-left text-[12px]">{label}</span>
       <span className="text-[10px]">{nilai}</span>
-      <ChevronRightIcon size={13} />
+      {onClick && <ChevronRightIcon size={13} />}
+    </>
+  );
+  if (!onClick) return <div className={`flex items-center gap-[10px] ${nonaktif ? "opacity-60" : ""}`}>{isi}</div>;
+  return (
+    <button type="button" onClick={onClick} className="flex items-center gap-[10px] rounded-md hover:bg-[#f5f6fa]">
+      {isi}
+    </button>
+  );
+}
+
+function FormSandi({ userId, tutup }: { userId: string; tutup: () => void }) {
+  const [lama, setLama] = useState("");
+  const [baru, setBaru] = useState("");
+  const [ulang, setUlang] = useState("");
+  const [pesan, setPesan] = useState("");
+  const [ok, setOk] = useState(false);
+  const [proses, setProses] = useState(false);
+
+  const kirim = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPesan("");
+    if (baru !== ulang) return setPesan("Konfirmasi kata sandi tidak sama.");
+    setProses(true);
+    try {
+      const res = await fetch(`/api/users/${userId}/sandi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ me: userId, passwordLama: lama, passwordBaru: baru }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setOk(res.ok);
+      setPesan(d.pesan || (res.ok ? "Berhasil." : "Gagal."));
+      if (res.ok) setTimeout(tutup, 1200);
+    } catch {
+      setPesan("Tidak dapat terhubung ke server.");
+    } finally {
+      setProses(false);
+    }
+  };
+
+  const kelas = "h-10 w-full rounded-[8px] border border-[#e4e6f0] px-3 text-[13px] outline-none focus:border-[#6d4aff]";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Ubah kata sandi">
+      <form onSubmit={kirim} className="flex w-full max-w-[380px] flex-col gap-3 rounded-[14px] bg-white p-6">
+        <h2 className="text-[17px] font-semibold">Ubah kata sandi</h2>
+        <input type="password" required placeholder="Kata sandi lama" value={lama} onChange={(e) => setLama(e.target.value)} className={kelas} autoComplete="current-password" />
+        <input type="password" required minLength={6} placeholder="Kata sandi baru (min. 6 karakter)" value={baru} onChange={(e) => setBaru(e.target.value)} className={kelas} autoComplete="new-password" />
+        <input type="password" required placeholder="Ulangi kata sandi baru" value={ulang} onChange={(e) => setUlang(e.target.value)} className={kelas} autoComplete="new-password" />
+        {pesan && <p role="status" className={`text-[12px] ${ok ? "text-[#168355]" : "text-[#c3475a]"}`}>{pesan}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={tutup} className="h-10 rounded-[8px] px-4 text-[13px] hover:bg-[#f5f6fa]">Batal</button>
+          <button disabled={proses} className="h-10 rounded-[8px] bg-[#6d4aff] px-4 text-[13px] font-semibold text-white disabled:opacity-60">{proses ? "Menyimpan..." : "Simpan"}</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -86,6 +140,32 @@ export function ProfilContent() {
   const user = useStoreUser();
   const [profil, setProfil] = useState<Profil | null>(null);
   const [gagal, setGagal] = useState(false);
+  const [mengedit, setMengedit] = useState(false);
+  const [namaBaru, setNamaBaru] = useState("");
+  const [studioBaru, setStudioBaru] = useState("");
+  const [galatEdit, setGalatEdit] = useState("");
+  const [menyimpan, setMenyimpan] = useState(false);
+  const [bukaSandi, setBukaSandi] = useState(false);
+  const [notifAktif, setNotifAktif] = useState(true);
+
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setNotifAktif(localStorage.getItem("game-orbit-notif") !== "off");
+    } catch {
+      /* abaikan */
+    }
+  }, []);
+
+  const ubahNotif = () => {
+    const berikutnya = !notifAktif;
+    setNotifAktif(berikutnya);
+    try {
+      localStorage.setItem("game-orbit-notif", berikutnya ? "on" : "off");
+    } catch {
+      /* abaikan */
+    }
+  };
 
   // Belum login -> ke halaman login
   useEffect(() => {
@@ -109,6 +189,34 @@ export function ProfilContent() {
   const keluar = () => {
     localStorage.removeItem("user");
     router.push("/login");
+  };
+
+  const mulaiEdit = () => {
+    setNamaBaru(profil?.user.name ?? user?.name ?? "");
+    setStudioBaru(profil?.user.studioName ?? user?.studioName ?? "");
+    setGalatEdit("");
+    setMengedit(true);
+  };
+
+  const simpanEdit = async () => {
+    if (!user) return;
+    setMenyimpan(true);
+    setGalatEdit("");
+    try {
+      const res = await fetch(`/api/users/${user.id}/profil`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ me: user.id, name: namaBaru, studioName: studioBaru }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) return setGalatEdit(d.pesan || "Gagal menyimpan.");
+      localStorage.setItem("user", JSON.stringify({ ...user, name: d.user.name, studioName: d.user.studioName }));
+      window.location.reload();
+    } catch {
+      setGalatEdit("Tidak dapat terhubung ke server.");
+    } finally {
+      setMenyimpan(false);
+    }
   };
 
   if (user === undefined) return null;
@@ -153,6 +261,10 @@ export function ProfilContent() {
             <span className="text-[25px]">{profil ? profil.jumlahKoleksi : "–"}</span>
             <span className="text-[10px]">Game dikoleksi</span>
           </div>
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-[25px]">{profil ? profil.jumlahUlasan : "–"}</span>
+            <span className="text-[10px]">Ulasan ditulis</span>
+          </div>
         </div>
       </div>
 
@@ -168,27 +280,49 @@ export function ProfilContent() {
           <Kartu className="flex flex-col gap-[22px] p-6">
             <div className="flex items-start justify-between">
               <h2 className="text-[17px]">Informasi pribadi</h2>
-              {/* Belum ada fitur edit -> nonaktif dulu */}
-              <button
-                type="button"
-                disabled
-                title="Segera hadir"
-                className="flex h-[42px] items-center gap-[9px] rounded-[8px] border border-[#e4e6f0] bg-white px-[17px] text-[13px] font-semibold opacity-60"
-              >
-                <PencilIcon size={17} />
-                Edit profil
-              </button>
+              {mengedit ? (
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setMengedit(false)} className="h-[42px] rounded-[8px] px-4 text-[13px] hover:bg-[#f5f6fa]">Batal</button>
+                  <button type="button" onClick={simpanEdit} disabled={menyimpan} className="h-[42px] rounded-[8px] bg-[#6d4aff] px-[17px] text-[13px] font-semibold text-white disabled:opacity-60">{menyimpan ? "Menyimpan..." : "Simpan"}</button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={mulaiEdit}
+                  className="flex h-[42px] items-center gap-[9px] rounded-[8px] border border-[#e4e6f0] bg-white px-[17px] text-[13px] font-semibold hover:bg-[#f5f6fa]"
+                >
+                  <PencilIcon size={17} />
+                  Edit profil
+                </button>
+              )}
             </div>
+            {mengedit ? (
+              <div className="flex flex-col gap-[18px] sm:flex-row">
+                <label className="flex min-w-0 flex-1 flex-col gap-[9px] text-[13px] font-medium text-[#70758a]">
+                  Nama lengkap
+                  <input value={namaBaru} onChange={(e) => setNamaBaru(e.target.value)} maxLength={60} className="h-[49px] rounded-[8px] border border-[#6d4aff] px-[15px] text-[14px] font-normal text-[#22243a] outline-none" />
+                </label>
+                {role !== "USER" && (
+                  <label className="flex min-w-0 flex-1 flex-col gap-[9px] text-[13px] font-medium text-[#70758a]">
+                    Nama studio
+                    <input value={studioBaru} onChange={(e) => setStudioBaru(e.target.value)} maxLength={60} className="h-[49px] rounded-[8px] border border-[#6d4aff] px-[15px] text-[14px] font-normal text-[#22243a] outline-none" />
+                  </label>
+                )}
+              </div>
+            ) : null}
+            {galatEdit && <p role="alert" className="text-[12px] text-[#c3475a]">{galatEdit}</p>}
             <div className="flex flex-col gap-[18px] sm:flex-row">
-              <Isian label="Nama lengkap" nilai={nama} />
+              {!mengedit && <Isian label="Nama lengkap" nilai={nama} />}
               <Isian label="Peran" nilai={labelRole(role)} />
             </div>
             <div className="flex flex-col gap-[18px] sm:flex-row">
               <Isian label="Alamat email" nilai={profil?.user.email ?? "…"} />
-              <Isian
-                label={role === "USER" ? "Status akun" : "Nama studio"}
-                nilai={role === "USER" ? "Aktif" : user.studioName || "-"}
-              />
+              {(role === "USER" || !mengedit) && (
+                <Isian
+                  label={role === "USER" ? "Status akun" : "Nama studio"}
+                  nilai={role === "USER" ? "Aktif" : user.studioName || "-"}
+                />
+              )}
             </div>
             <p className="flex flex-wrap items-center gap-[7px] text-[10px]">
               <BadgeCheckIcon size={15} className="text-[#168355]" />
@@ -251,10 +385,10 @@ export function ProfilContent() {
         <div className="flex min-w-0 flex-1 flex-col gap-[22px]">
           <Kartu className="flex flex-col gap-[21px] p-6">
             <h2 className="text-[17px]">Preferensi &amp; keamanan</h2>
-            <BarisPengaturan icon={<BellIcon size={17} />} label="Notifikasi" nilai="Aktif" />
-            <BarisPengaturan icon={<GlobeIcon size={17} />} label="Bahasa aplikasi" nilai="Indonesia" />
-            <BarisPengaturan icon={<LockKeyholeIcon size={17} />} label="Kata sandi" nilai="Ubah" />
-            <BarisPengaturan icon={<EyeIcon size={17} />} label="Visibilitas profil" nilai="Publik" />
+            <BarisPengaturan icon={<BellIcon size={17} />} label="Notifikasi" nilai={notifAktif ? "Aktif" : "Nonaktif"} onClick={ubahNotif} />
+            <BarisPengaturan icon={<GlobeIcon size={17} />} label="Bahasa aplikasi" nilai="Indonesia (lainnya segera)" nonaktif />
+            <BarisPengaturan icon={<LockKeyholeIcon size={17} />} label="Kata sandi" nilai="Ubah" onClick={() => setBukaSandi(true)} />
+            <BarisPengaturan icon={<EyeIcon size={17} />} label="Visibilitas profil" nilai="Publik" nonaktif />
           </Kartu>
 
           {isDevOrAdmin && (
@@ -296,6 +430,7 @@ export function ProfilContent() {
           </p>
         </div>
       </div>
+    {bukaSandi && <FormSandi userId={user.id} tutup={() => setBukaSandi(false)} />}
     </>
   );
 }

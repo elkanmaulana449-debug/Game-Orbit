@@ -226,23 +226,9 @@ function NavByRoute() {
 }
 
 export function SidebarNav() {
-  const pathname = usePathname();
+  // usePathname / useSearchParams hanya boleh dibaca di dalam <Suspense>.
   return (
-    <Suspense
-      fallback={
-        <NavList
-          active={
-            pathname.startsWith("/chat")
-              ? "chat"
-              : pathname.startsWith("/koleksi")
-                ? "koleksi"
-                : pathname.startsWith("/profil")
-                  ? "none"
-                  : "beranda"
-          }
-        />
-      }
-    >
+    <Suspense fallback={<NavList active="none" />}>
       <NavByRoute />
     </Suspense>
   );

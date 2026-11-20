@@ -27,8 +27,23 @@ export async function GET(request: Request) {
       _count: { _all: true },
     });
     const jumlahPerGame = new Map(transaksiSukses.map((row) => [row.gameId, row._count._all]));
+    const ratingPerGame = gameIds.length === 0 ? [] : await prisma.review.groupBy({
+      by: ["gameId"],
+      where: { gameId: { in: gameIds } },
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+    const ratingMap = new Map(ratingPerGame.map((row) => [row.gameId, row]));
     return NextResponse.json({
-      games: games.map((game) => ({ ...game, downloadCount: jumlahPerGame.get(game.id) ?? 0 })),
+      games: games.map((game) => {
+        const rating = ratingMap.get(game.id);
+        return {
+          ...game,
+          downloadCount: jumlahPerGame.get(game.id) ?? 0,
+          ratingAvg: rating?._avg.rating ? Math.round(rating._avg.rating * 10) / 10 : 0,
+          ratingCount: rating?._count._all ?? 0,
+        };
+      }),
     }, { status: 200 });
   } catch (error) {
     console.error("ERROR_DAFTAR_GAME", error);

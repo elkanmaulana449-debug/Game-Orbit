@@ -48,6 +48,9 @@ export async function POST(req: Request) {
       if (user.role === "DEVELOPER" && user.status === "PENDING") {
         return NextResponse.json({ pesan: "Akun Developer kamu masih menunggu persetujuan Admin." }, { status: 403 });
       }
+      if (user.role === "DEVELOPER" && user.status === "REJECTED") {
+        return NextResponse.json({ pesan: "Pengajuan akun Developer kamu ditolak admin." }, { status: 403 });
+      }
       return NextResponse.json({ 
         pesan: "Login berhasil!", 
         user: { id: user.id, name: user.name, role: user.role, studioName: user.studioName }

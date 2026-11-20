@@ -25,6 +25,7 @@ model User {
   purchases        Transaction[]
   sentMessages     ChatMessage[]   @relation("Sender")
   receivedMessages ChatMessage[]   @relation("Receiver")
+  reviews          Review[]
 }
 
 // Tabel Game
@@ -36,12 +37,15 @@ model Game {
   genre       String   @default("Lainnya")
   imageUrl    String?
   videoUrl    String?
+  status      String   @default("PUBLISHED") // PUBLISHED, REVIEW, INACTIVE (dikelola admin)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   developerId String
   developer   User     @relation("DeveloperGames", fields: [developerId], references: [id])
 
   transactions Transaction[]
+  reviews      Review[]
 }
 
 // Tabel Transaksi (Pembayaran)
@@ -73,4 +77,22 @@ model ChatMessage {
 
   @@index([receiverId, createdAt])
   @@index([senderId, receiverId])
+}
+
+// Tabel Ulasan (hanya pemilik game / transaksi SUCCESS yang boleh menulis)
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int      // 1 - 5
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  gameId String
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gameId])
+  @@index([gameId, createdAt])
 }
